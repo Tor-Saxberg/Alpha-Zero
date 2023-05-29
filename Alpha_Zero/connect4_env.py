@@ -59,32 +59,40 @@ class Connect4Env:
     def legal_moves(self):
         return self.legal
 
-    def augment(self, board, pi, win):
-        """augment data, and assign values
-            return boards, Qs, policies"""
-        boards = []; Qs = []; policies = []
-        boards.append(board)
-        Qs.append(win)
-        policies.append(pi)
-        # flip board and policies for symmetry
-        boards.append(np.flip(board, axis=1))
-        Qs.append(win)
-        policies.append(np.flip(pi))
-        return boards, Qs, policies
-
-    def _separate_players(self):
-        """split board into player1 board and player2 board.
-        return player1_board, player2_board, current_player"""
-        board0 = np.array(self.board) == 0
-        board1 = np.array(self.board) == 1
-        current_player = np.ones(self.board_size) * self.player_turn()
-        return board0.astype(int), board1.astype(int), current_player.astype(int)
+    def generate_examples(self, node_list):
+        """augments a list of MCTS nodes for symmetry.
+            Returns lists of board states, Qs (0 or 1), and pi's"""
+        if not node_list[0].done(): breakpoint()
+        win = node_list[0].env.winner
+        boards = []; Qs = []; Ps = []
+        for node in node_list:
+            # separate player boards
+            board0 = (np.array(node.env.board) == 0).astype(int)
+            board1 = (np.array(node.env.board) == 1).astype(int)
+            board_player = np.ones(node.env.board_size) * node.env.player_turn()
+            # create example lists
+            boards.append([np.block([board0, board1, board_player]) ])
+            Qs.append(win)
+            Ps.extend(node.pi)
+            breakpoint()
+            # augment data
+            board0 = np.flip(board0, axis=1)
+            board1 = np.flip(board1, axis=1)
+            pi_flip =  np.flip(node.pi)
+            # append augmented examples
+            boards.append([np.block([board0, board1, board_player]) ])
+            Qs.append(win)
+            Ps.append(pi_flip)
+            # previous player lost
+            win = -win
+        return boards, Qs, Ps
+        # should use a set to avoid duplicates
 
     def check_for_fours(self, action):
         """update self.done (False->True), self.winner (None->self.player_turn())"""
         if self.is_winner():
             self.done = True
-            self.winner = self.player_turn()
+            self.winner = 1
             return;
         elif self.turn >= 41: # turn changes after check
             self.done = True;
@@ -160,8 +168,8 @@ class Connect4Env:
         """copy board"""
         new = type(self)() # create a new MCTS, not a new Connect4
         new.turn = self.turn
-        new.done = self.done
-        new.winner = self.winner
+        new.done = self.done # this isn't necessary
+        new.winner = self.winner  # this isn't necessary
         new.last_move = self.last_move
         new.legal = copy(self.legal) # copy 1d array
         new.board = deepcopy(self.board) # copy 2d array

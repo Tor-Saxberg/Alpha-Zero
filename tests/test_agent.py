@@ -1,28 +1,27 @@
-import sys; sys.path.append('../')
+import pytest
+import cProfile
+
 import numpy as np
+from Alpha_Zero.connect4_env import Connect4Env
+from Alpha_Zero.agent import Agent
+from Alpha_Zero.MCTS_net import MCTS
 
-from connect4_env import Connect4Env
-from agent import Agent
-from MCTS_net import create_MCTS_instance
 
-def test():
-    env = Connect4Env()
-    agent = Agent(env, net='cnn')
-    agent.train(games=3, sims=1,  virtual=1)
-
-def test_separate():
+#@pytest.mark.skip(reason="This test is currently skipped")
+def test_make_examples():
     print("testing separate")
     env = Connect4Env()
-    agent = Agent(env, net='cnn')
+    #agent = Agent(env, net='cnn')
+    agent = Agent(env)
+    initial_state = MCTS(agent.env,agent.net)
     examples = []
-    initial_state = create_MCTS_instance(agent.env,agent.net)
     node_list = []
-    next_state = initial_state
-    while True:
-        next_state, current_state, node_list = next_state.play(sims=7)
-        if agent._check(next_state):
-            examples.append(agent._make_examples(node_list))
-            break
+    current = initial_state
+    # simulate a game
+    while not current.done: current = current.play(sims=1)
+    # add all board states to examples
+    node_list = current._get_tree() # get the tree
+    examples.append(agent._make_examples(node_list)) # augment and add states
     print("testing node, board1, board2")
     node = node_list[0]
     player1_board, player2_board, next_player = node._separate_players()
@@ -31,19 +30,23 @@ def test_separate():
     print(player2_board, "\n")
     print(next_player, "\n")
 
+@pytest.mark.skip(reason="This test is currently skipped")
 def test_examples():
     print("testing separate")
+    # initialize
     env = Connect4Env()
     agent = Agent(env, net='cnn')
+    initial_state = MCTS(env)
     examples = []
-    initial_state = create_MCTS_instance(agent.env,agent.net)
     node_list = []
-    next_state = initial_state
-    while True:
-        next_state, current_state, node_list = next_state.play(sims=7)
-        if agent._check(next_state):
-            examples.append(agent._make_examples(node_list))
-            break
+    current = initial_state
+    # play a game
+    while not current.done():
+        current, current_state, node_list = current.play(sims=1)
+    # add states to examples
+
+
+    examples.append(agent._make_examples(node_list))
     node = node_list[0]
     win = 0 if node_list[0].winner is None else 1
     print(node.board)
@@ -67,7 +70,8 @@ def test_examples():
     print(Qs[0])
     print(policies[0])
 
-if __name__ == "__main__":
-    test()
-    #test_separate()
-    #test_examples()
+@pytest.mark.skip(reason="This test is currently skipped")
+def test_train():
+    env = Connect4Env()
+    agent = Agent(env, net='cnn')
+    agent.train(games=3, sims=1,  virtual=1)

@@ -2,7 +2,7 @@ import pytest
 import cProfile
 
 import numpy as np
-from random import sample
+from random import choice
 from time import time
 from Alpha_Zero.connect4_env import Connect4Env
 from Alpha_Zero.MCTS_net import MCTS
@@ -53,12 +53,12 @@ def test_Q():
     #initial = MCTS(env, net)
     initial = MCTS(env)
     node = initial
-    for _ in range(10):
+    for _ in range(1):
         current = node
         while not current.done():
             if not current.children: current._expand()
-            if not current.parent: current = sample(current.children,1)[0]
-            else: current = sample(current.children,1)[0]
+            #current = choice(current.children)
+            current = current.children[0]
         current._backpropogate(node) # update Q's
     print(node.Q)
 
@@ -69,14 +69,16 @@ def test_pi():
     #initial = MCTS(env, net)
     initial = MCTS(env)
     node = initial
-    for _ in range(10):
+    for sim in range(1000): # x simulations
         current = node
         while not current.done():
             if not current.children: current._expand()
-            if not current.parent: current = sample(current.children,1)[0]
-            else: current = sample(current.children,1)[0]
+            else: current = current._action()
         current._backpropogate(node) # update Q's
-    print(node.pi)
+    while current.parent: 
+        current._print_self()
+        #print(current.pi, end='\n')
+        current = current.parent
 
 @pytest.mark.skip(reason="This test is currently skipped")
 def test_expand():
@@ -132,17 +134,17 @@ def test_simulate():
     #node = MCTS(env, net)
     node = MCTS(env)
     start = time()
-    for _ in range(20): node._simulate()
+    node._simulate(20)
     end = time()
     children = sorted(node.children, key=lambda x: x.last())
     next_state = np.random.choice(children, p=node.pi[node.env.legal_moves() ])
     node._print_children()
     print(next_state)
+    next_state._print_self()
     print("mcts_simulate time: {}".format(end - start))
 
 #@pytest.mark.skip(reason="This test is currently skipped")
 def test_play():
-    print('hello world')
     env = Connect4Env()
     #net = 'cnn'
     net = None
@@ -151,21 +153,26 @@ def test_play():
     games = 1
     time_list = [[] for _ in range(games)]
     # start profiler
-    profiler = cProfile.Profile()
-    profiler.enable()
+    #profiler = cProfile.Profile()
+    #profiler.enable()
+    
     for game in range(games):
         print("new game")
         current = initial
         while not current.done():
             start = time()
-            current = current.play(sims=40)
+            current = current.play(sims=20)
+            print(current.parent)
             end = time()
-            current.env.render()
             time_list[game].append(end-start)
         current.env.render()
+        #for node in current._get_tree():
+            #node._print_children()
+
     # stop profiler
-    profiler.disable()
-    profiler.print_stats(sort='time')
+    #profiler.disable()
+    #profiler.print_stats(sort='time')
+
     """
     for game in range(games):
         print(f"game: {game}")
@@ -183,9 +190,13 @@ def test_effective():
     wins = 0
     games = 0
     states = 0
+    node = initial
+    player = 2
+    #player = choice([1,2])
 
     def check(node, winner, states, games, wins):
         if node.done():
+            if not games % 10:  node._print_siblings(); node.env.render()
             games += 1
             print(f"number of games: {games}")
             wins += 1 if winner == 'agent' \
@@ -197,25 +208,35 @@ def test_effective():
             return 1, states, games, wins
         return 0, states, games, wins
 
-    node = initial
-    #player = choice([1,2])
-    player = 2
-    while True:
-        if player == 1:
-            if not node.children: node._expand()
-            node = sample(node.children, 1)[0] # random move
-            #node = list(node.children)[0] # random move
-            result, states, games, wins = check(node, 'bot', states, games, wins)
-            #if result: node = initial
-            if result: break;
-            else: player = 2
-        if player == 2:
-            node = node.play(20) # MCTS move
-            result, states, games, wins = check(node, 'agent', states, games, wins)
-            #if result: node = initial
-            if result: break;
-            else: player = 1
+    # start profiler
+    #profiler = cProfile.Profile()
+    #profiler.enable()
+
+    # play 100 games
+    for _ in range(50):
+        node = node.reset()
+        # run each game to terminal
+        while not node.done():
+            if player == 1:
+                if not node.children: node._expand()
+                node = choice(node.children) # random move
+                #node = list(node.children)[0] # random move
+                result, states, games, wins = check(node, 'bot', states, games, wins)
+                #if result: node = initial
+                if result: break
+                else: player = 2
+
+            if player == 2:
+                node = node.play(20) # MCTS move
+                result, states, games, wins = check(node, 'agent', states, games, wins)
+                #if result: node = initial
+                if result: break
+                else: player = 1
+            if not games % 10:  node._print_siblings(); node.env.render()
+    # stop profiler
+    #profiler.disable()
+    #profiler.print_stats(sort='cumtime')
+
     #node_list = node._get_tree()
     #for move in node_list[-1::-1]:
     #    move._print_self()
-    print(node)

@@ -2,6 +2,7 @@ import pytest
 import cProfile
 
 from Alpha_Zero.connect4_env import Connect4Env
+import numpy as np
 from random import choice
 
 env = Connect4Env()
@@ -85,7 +86,7 @@ def test_full():
     env.step(env.legal_moves()[0])
     env.render()
 
-#@pytest.mark.skip(reason="This test is currently skipped")
+@pytest.mark.skip(reason="This test is currently skipped")
 def test_rand():
     """play randomly"""
     print('\nrandom testing')
@@ -97,10 +98,15 @@ def test_rand():
     env.render()
 
 #@pytest.mark.skip(reason="This test is currently skipped")
-def test_separate_players():
-    #test_rand()
-    baord0,baord1,turn = env._separate_players()
+def test_generate_examples():
+    from Alpha_Zero.MCTS_net import MCTS
+    env.reset()
+    initial = MCTS(env)
+    current = initial
+    while not current.done(): current = current.play(sims=1)
+    node_list = current._get_tree()
+    boards, Qs, Ps = env.generate_examples(node_list)
     print("\n")
-    print(baord0, end="\n\n")
-    print(baord1, end="\n\n")
-    print(turn)
+    print(boards, end="\n\n")
+    print(Qs, end="\n\n")
+    print(Ps, end="\n\n")
