@@ -59,6 +59,14 @@ class Connect4Env:
     def legal_moves(self):
         return self.legal
 
+    def separate_players(self):
+        board0 = (np.array(self.board) == 0).astype(int)
+        board1 = (np.array(self.board) == 1).astype(int)
+        board_player = np.ones(self.board_size) * self.player_turn()
+        combined_board = np.block([board0, board1, board_player]) 
+        return combined_board
+
+
     def generate_examples(self, node_list):
         """augments a list of MCTS nodes for symmetry.
             Returns lists of board states, Qs (0 or 1), and pi's"""
@@ -176,10 +184,12 @@ class Connect4Env:
         new.winning_moves = np.zeros(self.board_size).astype('int')
         #new.winning_moves = deepcopy(self.winning_moves) 
         return new
+        # consider using __dict__.update() without effecting env __copy__()
 
     def __repr__(self):
-        self.render()
-        return f"\nturn: {self.turn}, player: {self.player_turn}, last: {self.last_move}, hash: {self.__hash__}"
+        #self.render()
+        return f"\nturn: {self.turn}, player: {self.player_turn()}, last: {self.last_move}" 
+        #, hash: {self.__hash__}"
 
     def __eq__(self, other):
         "Nodes must be comparable"

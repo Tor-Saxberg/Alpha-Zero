@@ -36,7 +36,7 @@ class Agent():
                 print(current)
                 print(f'Epoch {epoch}, Game {i+1}')
                 if current.done():
-                    examples.append(self.env.generate_examples(node_list)) # this should be a set to avoid duplicates
+                    examples.append(self.env.generate_examples(node_list)) 
                     break
         if self.net: self.net.train(examples, virtual, epoch=epoch)
         end = time()

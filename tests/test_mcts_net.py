@@ -6,9 +6,9 @@ from random import choice
 from time import time
 from Alpha_Zero.connect4_env import Connect4Env
 from Alpha_Zero.MCTS_net import MCTS
-#from ..network.cnn import CNN
+from Alpha_Zero.network.cnn import CNN
 
-@pytest.mark.skip(reason="This test is currently skipped")
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_predict():
     env = Connect4Env()
     node = MCTS(env)
@@ -25,28 +25,38 @@ def test_predict():
     print(f"pi: {pi}")
     print(f'predict time: {end-start}')
 
-@pytest.mark.skip(reason="This test is currently skipped")
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_net_predict():
     env = Connect4Env()
     net = CNN(env)
     node = MCTS(env, net=net)
-    board = np.block([*node.env._separate_players() ])
-    board_reshape = np.reshape(board, (-1,board.shape[0], board.shape[1]) )
     start = time()
-    Q, pi = net.model.predict_on_batch(board_reshape)
+    Q, pi = node._predict()
     end = time()
+    print(node.env)
+    print(pi)
+    print(Q)
+    print(f"_predict time: {end-start}")
 
-    while not node.done(): node.play(20)
-    board = np.block([*node.env._separate_players() ])
-    board_reshape = np.reshape(board, (-1,board.shape[0], board.shape[1]) )
-    start = time()
-    Q, pi = net.model.predict_on_batch(board_reshape)
-    end = time()
-    print("Q: {}".format(Q))
-    print("pi: {}".format(pi))
-    print(f'predict time: {end-start}')
+    # start profiler
+    profiler = cProfile.Profile()
+    profiler.enable()
+    #while not node.done(): 
+    for _ in range(5):
+        node.play(10)
+        print(node.env.turn)
+    # stop profiler
+    profiler.disable()
+    profiler.print_stats(sort='cumtime')
 
-@pytest.mark.skip(reason="This test is currently skipped")
+    #Q, pi = net.model.predict_on_batch(board_reshape)
+    Q, pi = node._predict()
+    print(node.env)
+    print(pi)
+    print(Q)
+
+
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_Q():
     env = Connect4Env()
     # net = CNN(env)
@@ -60,9 +70,9 @@ def test_Q():
             #current = choice(current.children)
             current = current.children[0]
         current._backpropogate(node) # update Q's
-    print(node.Q)
+    current._print_parents()
 
-@pytest.mark.skip(reason="This test is currently skipped")
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_pi():
     env = Connect4Env()
     # net = CNN(env)
@@ -80,7 +90,7 @@ def test_pi():
         #print(current.pi, end='\n')
         current = current.parent
 
-@pytest.mark.skip(reason="This test is currently skipped")
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_expand():
     env = Connect4Env()
     #net = CNN(env)
@@ -99,35 +109,25 @@ def test_expand():
         else: current = current._action()
     print(times)
 
-@pytest.mark.skip(reason="This test is currently skipped")
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_backpropogate():
     """_backpropogate should update pi and Q for each node"""
     env = Connect4Env()
     #net = CNN(env)
     #node = MCTS(env, net)
     initial = MCTS(env)
-    games = 10
-    time_list = [[] for _ in range(games)]
-    for game in range(games): # x games
+    games = 1
+    for _ in range(games): # x games
         current = initial
         # simulate to leaf
         while not current.done():
             if not current.children: current._expand()
-            current = current._action()
+            current = current.children[0]
         # backpropogate
-        start = time()
         current._backpropogate(initial) # leaf=current; root=initial
-        end = time()
-        current.env.render()
-        time_list[game].append(end-start)
-    # record time
-    for game in range(games):
-        print(f"game: {game}")
-        for i,t in enumerate(time_list[game]):
-            if i: print("\t", end='')
-            print(f"{round(t,4)}\n")
+        current._print_parents()
 
-@pytest.mark.skip(reason="This test is currently skipped")
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_simulate():
     env = Connect4Env()
     #net = CNN(env)
@@ -155,17 +155,18 @@ def test_play():
     # start profiler
     #profiler = cProfile.Profile()
     #profiler.enable()
-    
+
     for game in range(games):
         print("new game")
         current = initial
         while not current.done():
             start = time()
-            current = current.play(sims=20)
+            current = current.play(sims=80)
             print(current.parent)
             end = time()
             time_list[game].append(end-start)
-        current.env.render()
+        print(current)
+        breakpoint()
         #for node in current._get_tree():
             #node._print_children()
 
@@ -182,7 +183,7 @@ def test_play():
     """
 
 
-@pytest.mark.skip(reason="This test is currently skipped")
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_effective():
     #from random import choice
     env = Connect4Env()

@@ -11,7 +11,7 @@ from copy import copy
 
 class MCTS():
     """an MCTS using a tree structure"""
-    def __init__(self, env, net=None, expl=1, copy=None):
+    def __init__(self, env, net=None, expl=3, copy=None):
         """initialize N, Q, pi, parent, children"""
         self.env = env
         self.net = net
@@ -19,14 +19,15 @@ class MCTS():
         self.expl = expl # max(child.Q + expl * pi * sqrt(N) / (child.N+1))
         self.sim_flag = 0
 
+        self.parent = None
+        self.children = []
+
         self.N = 0
         self.U = 0
         if not copy: self.Q, self.pi = self._predict() # don't run _predict() twice
-        self.children = []
-        self.parent = None
 
         self.print_N = 0
-        self.print_Q = 0
+        self.print_Q = 0 # not 0, because that's a tie state.
         self.print_U = 0
         self.print_pi = [0] * 7
 
@@ -52,7 +53,7 @@ class MCTS():
         next_state = max(self.children, key=lambda x: x.U)
         return next_state
 
-    def _get_tree(self):
+    def get_tree(self):
         """propogate from terminal, update N,Q; return path
            Return the branch as a list of nodes"""
         current = self
@@ -66,14 +67,15 @@ class MCTS():
         """get policy from net"""
         if self.net:
             # divide board
-            player1_board, player2_board, next_player = self.env._separate_players()
-            board = np.block([player1_board, player2_board, next_player])
+            # this means reverting changes to the env, test_env, and agent.py
+            board = self.env.separate_players()
             board_reshape = np.reshape(board, (-1,board.shape[0], board.shape[1]) )
             # assign Q, pi from net
             Q, pi = self.net.model.predict_on_batch(board_reshape)
             Q = Q[0][0]; pi = pi[0] # why are these 2D arrays?
             pi[pi==0] = 0.5 # never say never
             pi = np.random.dirichlet(pi*self.expl + 1) # add noise
+            return Q, pi
         else:
             Q = 0 # unkown outcome
             pi = np.zeros(7)
@@ -92,17 +94,12 @@ class MCTS():
                 #if current.Q > 0.8 and current.turn > 20: break;
                 if not current.children: current._expand()
                 # if there's a simulated terminal node
-                if any((child.sim_flag and child.done()) for child in current.children):
-                    breakpoint()
-                    break
                 # if branch fully explored:
-                if all(child.sim_flag for child in current.children):
-                    breakpoint()
-                    break
+                if current.sim_flag: break
                 # random first move for stochasticity
                 if not current.parent: current = choice(current.children)
                 else: current = current._action()
-            current._backpropogate(self) # reversed tree path from leaf to self
+            if current.done() or not current.sim_flag: current._backpropogate(self) # reversed tree path from leaf to self
         # you should set a sim flag = 1 if all(child.flag... ) or any(child.done...) to prevent duplicates.
             # when using a net, the whole node tree is forgotten anyways
         # one simulation should not affect another. you need to parralelize this operation.
@@ -127,7 +124,9 @@ class MCTS():
     def _action(self):
         """select best child"""
             #return child.Q
-        max_U = max(self.children, key=lambda x: abs(x.U)).U # U > 0 for all or all but 1
+        for child in self.children: 
+            if child.N == 0: return child # return first unsimulated child
+        max_U = (max(self.children, key=lambda x: abs(x.U)).U) # U > 0 for all or all but 1
         if max_U == 0: return choice(self.children)
         children_U = np.array([child.U/(child.N+1) for child in self.children])
         children_U += max_U # all positive values
@@ -139,27 +138,45 @@ class MCTS():
            Arguments:
                self: leaf of current simulation
                root: last non-simulated move
+            Process: 
+                update Q and N, then U
+                don't update N or U of root or above
+                only _print_update() for root.child
+                update pi for all parents
         """
         flag = 0
         current = self
         while current: 
+            current._sim()
             current._Q()
             if current == root: flag = 1;
-            if not flag: current.N += 1 # don't update N of root
-            current._pi()
-            current.print_pi = copy(current.pi)
-            if not flag: current._U()
-            #if not flag: current._printing_update()
-            if current.parent == root: current._printing_update()
+            if not flag: 
+                current.N += 1
+                current._U()
+            if current.parent == root: 
+                current._printing_update()
             current = current.parent
+        root._pi()
+
+    def _sim(self):
+        if self.done(): 
+            self.sim_flag = 1
+        elif any(child.done() and child.sim_flag for child in self.children): 
+            self.sim_flag = 1
+        elif all(child.sim_flag for child in self.children): 
+            self.sim_flag = 1
 
     def _Q(self):
-        """update Q values: 0 (tie), 1 (win), or -AVG(children.Q)"""
+        """update Q values: 0 (tie), 1 (win), or -AVG(children.Q)
+            Process: 
+                check done: self.Q = 1 or 0
+                check any(child.done): self.Q = -1
+                self.Q = avg child.Q"""
         # current turn won or tied
         if self.done(): 
             self.Q = 1 if self.env.winner else 0; 
         # next turn wins
-        elif any(child.Q == 1 and child.done() == True for child in self.children):
+        elif any(child.env.winner and child.done() for child in self.children):
             self.Q = -1
         # Q = avg child.Q
         else:
@@ -173,7 +190,8 @@ class MCTS():
         if self.env.turn > 10: self.t = (self.N + self.env.turn) / (self.N)
         for child in self.children: 
             # at least one child was simulated
-            if child.N: self.pi[child.last()] = child.N**self.t/(self.N+1)
+            if child.N: self.pi[child.last()] = child.N**self.t / (self.N+1)
+            else: self.pi[child.last()] = 1/len(self.children)
         self.pi /= sum(self.pi)
 
     def _U(self):
@@ -182,73 +200,31 @@ class MCTS():
 
     def _printing_update(self):
         self.print_N = self.N
+        #self.print_Q = self.Q if self.Q is not None else 0
         self.print_Q = self.Q
         self.print_U = self.U
-        self.print_pi = copy(self.pi)
+        #self.print_pi = copy(self.pi)
 
-    def _print_parents(self):
+    def view_turn(self, turn):
+        current = self
+        while current.env.turn > turn:
+            current = current.parent
+        return current
+
+    def view_sim(self):
+        current = self
+        while current:
+            current = max(current.children, key = lambda x: x.N)
+            print(current)
+
+    def print_parents(self):
         current = self
         while current.parent:
-            current._print_siblings()
+            #current._print_siblings()
+            print(current)
             current = current.parent
 
-    def _print_siblings(self):
-        """print list of parents"""
-        print('\nsiblings:')
-        if self.parent is None: print('None')
-        else:
-            parent = self.parent
-            s = ''
-            sN = ''
-            sQ = ''
-            sP = ''
-            sU = ''
-
-            for node in parent.children:
-                sN += '\t'
-                sQ += '\t'
-                sP += '\t'
-                U = node.Q + node.expl * parent.pi[node.last()] * math.sqrt(node.N) / (node.N+1)
-                sU += '\t'
-
-                # highlight self
-                if node is self: 
-                    sN += colored(f'{node.print_N}','red')
-                    sQ += colored(f'{node.print_Q:2.3f}','red')
-                    sU += colored(f'{node.print_U:2.3f}','red')
-                    sP += colored(f'{parent.print_pi[node.last()]:2.3f}','red')
-
-                # highlight max sibling
-                else:
-                    # color max N
-                    if node == max(parent.children, key=lambda x: x.print_N):
-                        sN += colored(f'{node.print_N}','green')
-                    else:
-                        sN += f'{node.print_N}'
-                    # color max Q
-                    if node == max(parent.children, key=lambda x: x.print_Q):
-                        sQ += colored(f'{node.print_Q:2.3f}','green')
-                    else:
-                        sQ += f'{node.print_Q:2.3f}'
-                    # color max U
-                    if node == max(parent.children, key=lambda x: x.print_Q):
-                        sU += colored(f'{node.print_U:2.3f}','green')
-                    else:
-                        sU += f'{node.print_U:2.3f}'
-                    # color max pi
-                    if node == max(parent.children, key=lambda x: parent.print_pi[x.last()]):
-                        sP += colored(f'{parent.print_pi[node.last()]:2.3f}','green')
-                    else:
-                        sP += f'{parent.print_pi[node.last()]:2.3f}'
-            # print parent
-            s += f"turn {self.env.turn} \n"
-            s += "N" + sN + '\n'
-            s += "Q" + sQ + '\n'
-            s += "U" + sU + '\n'
-            s += "P" + sP + '\n'
-            print(s)
-
-    def _print_self(self):
+    def print_self(self):
         """print current node info"""
         #print(f"\nself: \nN: {self.N} \nQ: {self.Q} \npi: {self.pi}"); 
         s = ''
@@ -259,7 +235,7 @@ class MCTS():
         print(s)
         self.env.render()
 
-    def _print_children(self):
+    def print_children(self):
         """print list of children"""
         print('\nchildren:', end=" ")
         if not self.children: print('None'); return ''
@@ -268,17 +244,73 @@ class MCTS():
             for child in self.children:
                 s += '\n\t'
                 #s += f'\n\tmove: {child.last()} '
-                s += f'N: {child.N} \t'
-                s += f'Q: {(child.Q):.2f} \t'
-                s += f'U: {(child.U):.2f} \t'
-                s += f'\tpolicy: '
-                s += f'  {["{:.3f}".format(pi) for pi in child.pi]}'
+                s += f'N: {child.N}'
+                s += f'    Q: {(child.Q):.2f}'
+                s += f' \t U: {(child.U):.2f}'
+                s += f' \t policy: '
+                s += f'{["{:.3f}".format(pi) for pi in child.pi]}'
                 #s += f' policy: ' + '   '.join(f"{x:2.2f}" for x in self.pi)
             print(s)
 
+    def print_siblings(self):
+            """print list of parents"""
+            print('\nsiblings:')
+            if self.parent is None: print('None')
+            else:
+                parent = self.parent
+                siblings = parent.children
+                s = ''
+                sN = ''
+                sQ = ''
+                sP = ''
+                sU = ''
+
+                for node in siblings:
+                    sN += '\t'
+                    sQ += '\t'
+                    sP += '\t'
+                    sU += '\t'
+
+                    # highlight self
+                    if node is self: 
+                        sN += colored(f'{node.N}','red')
+                        sQ += colored(f'{node.Q:2.3f}','red')
+                        sU += colored(f'{node.U:2.3f}','red')
+                        sP += colored(f'{parent.pi[node.last()]:2.3f}','red')
+
+                    # highlight max sibling
+                    else:
+                        # color max N
+                        if node == max(siblings, key=lambda x: x.N):
+                            sN += colored(f'{node.N}','green')
+                        else:
+                            sN += f'{node.N}'
+                        # color max Q
+                        if node == max(siblings, key=lambda x: x.Q):
+                            sQ += colored(f'{node.Q:2.3f}','green')
+                        else:
+                            sQ += f'{node.Q:2.3f}'
+                        # color max U
+                        if node == max(siblings, key=lambda x: x.U):
+                            sU += colored(f'{node.U:2.3f}','green')
+                        else:
+                            sU += f'{node.U:2.3f}'
+                        # color max pi
+                        if node == max(siblings, key=lambda x: parent.pi[x.last()]):
+                            sP += colored(f'{parent.pi[node.last()]:2.3f}','green')
+                        else:
+                            sP += f'{parent.pi[node.last()]:2.3f}'
+                # print parent
+                s += f"turn {self.env.turn} \n"
+                s += "N" + sN + '\n'
+                s += "Q" + sQ + '\n'
+                s += "U" + sU + '\n'
+                s += "P" + sP + '\n'
+                print(s)
+
     def __repr__(self):
         """print MCTS node representation"""
-        self._print_siblings()
+        #if self.parent: self.print_siblings()
         self.env.render()
         #self._print_children()
         return ''
@@ -290,6 +322,8 @@ class MCTS():
         new.env = self.env.__copy__()
         # can't use __dict__.update() without effecting env __copy__()
         # in theory, you don't need to copy the env. just use one copy for simulating, and restore it to root
+        # since _Q() evaluates the env.done() of children, you need self.done = env.done() in __init__()
+            # same for env.winner
         new.pi = []
         new. Q = 0
         new.net = self.net

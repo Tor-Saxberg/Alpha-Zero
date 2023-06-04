@@ -21,7 +21,9 @@ def test_make_examples():
     while not current.done: current = current.play(sims=1)
     # add all board states to examples
     node_list = current._get_tree() # get the tree
-    examples.append(agent._make_examples(node_list)) # augment and add states
+    for node in node_list:
+        states = agent._make_examples(
+        examples.append(agent._make_examples(node_list)) # augment and add states
     print("testing node, board1, board2")
     node = node_list[0]
     player1_board, player2_board, next_player = node._separate_players()

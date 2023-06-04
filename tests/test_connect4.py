@@ -98,13 +98,30 @@ def test_rand():
     env.render()
 
 #@pytest.mark.skip(reason="This test is currently skipped")
+def test_separate_players():
+    from Alpha_Zero.MCTS_net import MCTS
+    env.reset()
+    initial = MCTS(env)
+    current = initial
+    while not current.done(): current = current.play(sims=1)
+    print(current)
+    print(current.env.board)
+    board0 = (np.array(current.env.board) == 0).astype(int)
+    #board1 = (np.array(self.board) == 1).astype(int)
+    #board_player = np.ones(self.board_size) * self.player_turn()
+    print(board0)
+    boards = current.env.separate_players()
+    print(boards)
+
+
+#@pytest.mark.skip(reason="This test is currently skipped")
 def test_generate_examples():
     from Alpha_Zero.MCTS_net import MCTS
     env.reset()
     initial = MCTS(env)
     current = initial
     while not current.done(): current = current.play(sims=1)
-    node_list = current._get_tree()
+    node_list = current.get_tree()
     boards, Qs, Ps = env.generate_examples(node_list)
     print("\n")
     print(boards, end="\n\n")
