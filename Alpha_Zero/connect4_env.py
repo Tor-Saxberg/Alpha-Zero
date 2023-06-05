@@ -187,7 +187,7 @@ class Connect4Env:
         # consider using __dict__.update() without effecting env __copy__()
 
     def __repr__(self):
-        #self.render()
+        self.render()
         return f"\nturn: {self.turn}, player: {self.player_turn()}, last: {self.last_move}" 
         #, hash: {self.__hash__}"
 

@@ -29,31 +29,28 @@ def test_predict():
 def test_net_predict():
     env = Connect4Env()
     net = CNN(env)
-    node = MCTS(env, net=net)
-    start = time()
-    Q, pi = node._predict()
-    end = time()
+    node = MCTS(env, copy=True, net=net)
+    node._expand()
+    node._predict()
     print(node.env)
-    print(pi)
-    print(Q)
-    print(f"_predict time: {end-start}")
+    print(node.pi)
+    print(node.Q)
 
     # start profiler
     profiler = cProfile.Profile()
     profiler.enable()
-    #while not node.done(): 
-    for _ in range(5):
-        node.play(10)
-        print(node.env.turn)
+    while not node.done(): 
+        node = node.play(20)
+        print(node)
     # stop profiler
     profiler.disable()
     profiler.print_stats(sort='cumtime')
 
     #Q, pi = net.model.predict_on_batch(board_reshape)
-    Q, pi = node._predict()
+    node._predict()
     print(node.env)
-    print(pi)
-    print(Q)
+    print(node.pi)
+    print(node.Q)
 
 
 #@pytest.mark.skip(reason="This test is currently skipped")

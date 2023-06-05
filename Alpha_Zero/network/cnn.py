@@ -21,16 +21,16 @@ class CNN():
         self.board_size = env.board_size
         self.action_size = env.action_size
 
-        inputs = Input(shape=(self.board_size[0], self.board_size[1]*3) )
-        net = Reshape((self.board_size[0], self.board_size[1]*3, 1) )(inputs)
-        for i in range(1):
+        inputs = Input(shape=(self.board_size[0], self.board_size[1]*3) ) # (6,7*3)
+        net = Reshape((self.board_size[0], self.board_size[1]*3, 1) )(inputs) # (6,21,1)
+        for _ in range(1):
             net = Conv2D(128, kernel_size=4, strides=1, padding='same',
                     kernel_initializer=RandomUniform() )(net)
             net = BatchNormalization(axis=3)(net)
             net = Activation('relu')(net)
         net = Flatten()(net)
 
-        for i in range(2):
+        for _ in range(2):
             #net = Dense(int(1024/(4**i)),
             net = Dense(64,
                     kernel_initializer=RandomUniform()  )(net)
@@ -55,46 +55,23 @@ class CNN():
         """
 
     def train(self, examples, virtual, epoch=0):
-        """train network and reeturn win_rate"""
-        if not virtual:
-            """train on path batch"""
-            boards_list = []; Qs_list = []; policies_list = []
-            for example in examples:
-                boards, Qs, policies = example
-                boards_list.extend(boards)
-                Qs_list.extend(Qs)
-                policies_list.extend(policies)
+        """train network on batch of examples"""
+        boards_list = []; Qs_list = []; policies_list = []
+        for example in examples:
+            boards, Qs, policies = example
+            boards_list.extend(boards)
+            Qs_list.extend(Qs)
+            policies_list.extend(policies)
 
-            boards = np.reshape(boards_list, (-1,*boards[0].shape) )
-            Qs = np.reshape(Qs_list, (-1,1))
-            policies = np.reshape(policies_list, (-1,self.action_size))
+        boards = np.reshape(boards_list, (-1,*boards[0].shape) )
+        Qs = np.reshape(Qs_list, (-1,1))
+        policies = np.reshape(policies_list, (-1,self.action_size))
 
-            print(f"fitting {len(boards)} boards")
-            #print(boards[0])
-            #print(Qs[0])
-            #print(policies[0])
-
-            checkpointer = ModelCheckpoint(filepath=self.save_checkpoint(epoch),
-                                           save_weights_only=True,
-                                           save_best_only=True,
-                                           #monitor='loss', mode='min',
-                                           verbose=0)
-            tensorboard = TensorBoard(log_dir=f'./logging/{self.game}_cnn_{epoch}',
-                                      histogram_freq=10,
-                                      write_images=True,
-                                      batch_size=boards.size,
-                                      update_freq='batch')
-
-            start = time()
-            self.model.fit(x = boards, y = [Qs, policies],
-                           validation_split=0.15,
-                           batch_size=boards.size,
-                           epochs = 50, shuffle=False, verbose=0,
-                           callbacks=[checkpointer, tensorboard])
-
-            print(f"cnn training time: {time() - start}")
-            sys.stdout.flush()
-            #self.save_checkpoint(epoch=epoch)
+        self.model.fit(x = boards, y = [Qs, policies],
+                       validation_split=0.15,
+                       batch_size=boards.size,
+                       epochs = 50, shuffle=False, verbose=0,
+                       callbacks=[checkpointer, tensorboard])
 
     def save_checkpoint(self, epoch=0):
             folder='./checkpoints'

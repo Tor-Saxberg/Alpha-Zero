@@ -68,14 +68,24 @@ class MCTS():
         if self.net:
             # divide board
             # this means reverting changes to the env, test_env, and agent.py
-            board = self.env.separate_players()
-            board_reshape = np.reshape(board, (-1,board.shape[0], board.shape[1]) )
+            boards = []
+            for child in self.children:
+                boards.append(child.env.separate_players())
+            boards = np.array(boards)
+            boards = np.reshape(boards, (-1, boards.shape[1], boards.shape[2]) )
             # assign Q, pi from net
-            Q, pi = self.net.model.predict_on_batch(board_reshape)
-            Q = Q[0][0]; pi = pi[0] # why are these 2D arrays?
-            pi[pi==0] = 0.5 # never say never
-            pi = np.random.dirichlet(pi*self.expl + 1) # add noise
-            return Q, pi
+            Q, pi = self.net.model.predict_on_batch(boards)
+            for i,child in enumerate(self.children):
+                child.Q = Q[i][0]
+                child.pi = pi[i]
+                if not child.done(): child.pi[child.pi==0] = 1/len(child.env.legal_moves())
+                #child.pi = np.random.dirichlet(pi*self.expl + 1) # add noise
+
+            # set pi and Q for initial node
+            if not self.parent: 
+                self.pi = np.ones(7) / 7
+                self.Q = 0
+
         else:
             Q = 0 # unkown outcome
             pi = np.zeros(7)
@@ -86,28 +96,33 @@ class MCTS():
 
     def _simulate(self, sims):
         """update pi and Q via simulations
-           randomize the first move"""
+            Process:
+                simulate n games to completion.
+                    expand children if needed
+                    fill Q and pi values of children in batch
+        """
         for _ in range(sims):
-            #if self.N * self.env.turn > 50: break
             current = self
             while not current.done():
                 #if current.Q > 0.8 and current.turn > 20: break;
-                if not current.children: current._expand()
-                # if there's a simulated terminal node
-                # if branch fully explored:
-                if current.sim_flag: break
-                # random first move for stochasticity
-                if not current.parent: current = choice(current.children)
-                else: current = current._action()
-            if current.done() or not current.sim_flag: current._backpropogate(self) # reversed tree path from leaf to self
-        # you should set a sim flag = 1 if all(child.flag... ) or any(child.done...) to prevent duplicates.
-            # when using a net, the whole node tree is forgotten anyways
-        # one simulation should not affect another. you need to parralelize this operation.
-            # simulations are independent, so you don't need to worry about opening a node
-                # _simulate: don't lock for _action(), but wait for it to be unlocked.
-            # simulations are overlapping, so you need to lock a node while updating
-                # _simulate: lock a node before expanding it
-                # _backpropogate: lock current, update, lock next, release last
+                if current.sim_flag: break # if branch fully explored, don't simulate it
+                if not current.children: # if unsimulated:
+                    current._expand() # create child nodes for each legal move
+                    current._predict() # get Q and pi from network for each child
+                current = current._action() # select next move with stochasticity
+            if not current.sim_flag: current._backpropogate(self) # propogate new leaf
+            """
+            # one simulation should not affect another. you need to parralelize this operation.
+                # always update N, but hide Q and pi values
+                    # or maybe they shouldn't be hidden?
+                # _simulate: 
+                    # 1) lock, expand, unlock
+                    # 2) make threads for sim simulations 
+                    # 3) check unlocked, then _action()
+                    # lock, backpropogate, unlock
+                # simulations are overlapping, so you need to lock a node while updating
+                    # _backpropogate: lock current, update, lock next, release last
+            """
 
     def _expand(self):
         """create children nodes"""
@@ -119,11 +134,16 @@ class MCTS():
             new.children = []
             new.env.step(action)
             self.children.append(new) # children are sorted by move
-            new.Q, new.pi = new._predict() # must do this after steping
+            """
+            don't make identical boards 
+                check if that board is used in another node
+                    create a dictionary of nodes(values) and boards(keys)
+            """
 
     def _action(self):
         """select best child"""
             #return child.Q
+        #if not self.parent: self = choice(self.children) # random first move
         for child in self.children: 
             if child.N == 0: return child # return first unsimulated child
         max_U = (max(self.children, key=lambda x: abs(x.U)).U) # U > 0 for all or all but 1
@@ -156,6 +176,7 @@ class MCTS():
             if current.parent == root: 
                 current._printing_update()
             current = current.parent
+        print(root.pi)
         root._pi()
 
     def _sim(self):
@@ -183,6 +204,7 @@ class MCTS():
             Qs = np.array([child.Q for child in self.children if child.N > 0])
             if Qs.size > 0:
                 self.Q = -np.mean(Qs)
+                # self.Q = (self.N*self.Q + v) / (self.N+1)
 
     def _pi(self):
         """update policies after MCTS in last-move order"""
@@ -196,7 +218,11 @@ class MCTS():
 
     def _U(self):
         if not self.parent: return
-        self.U = self.Q + self.parent.expl * self.parent.pi[self.last()] * math.sqrt(self.N) / (self.N+1)
+        self.U = self.Q \
+                + self.parent.expl \
+                * self.parent.pi[self.last()] \
+                * math.sqrt(sum(child.N for child in self.parent.children)) \
+                / (self.N+1)
 
     def _printing_update(self):
         self.print_N = self.N
